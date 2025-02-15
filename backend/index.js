@@ -8,7 +8,6 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
 require('dotenv').config();
-
 const app = express();
 
 // 1) Connect to MongoDB
@@ -163,6 +162,16 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     });
   }
 });
+
+app.get('/sent-mails', async (req, res) => {
+    try {
+      const mails = await SentMail.find().sort({ sentAt: -1 });
+      return res.json(mails);
+    } catch (error) {
+      console.error('Error fetching sent mails:', error);
+      return res.status(500).json({ error: error.message });
+    }
+  });
 
 // Start the Express server
 const PORT = process.env.PORT || 3001;
