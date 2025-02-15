@@ -23,7 +23,7 @@ const SentMail = require('./models/SentMail');
 
 // 3) Configure CORS (allow only the domain in FRONTEND_URL)
 const corsOptions = {
-  origin: process.env.FRONTEND_URL, // e.g. "http://localhost:3000"
+  origin: 'https://email-camp-ace.vercel.app', // e.g. "http://localhost:3000"
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 };
