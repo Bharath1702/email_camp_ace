@@ -39,7 +39,7 @@ function HomePage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // 1) Handle File Change: parse the file to show columns, preview
+  // Handle file change: parse the file to show columns, preview
   const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0];
     setFile(selectedFile);
@@ -76,15 +76,14 @@ function HomePage() {
     }
   };
 
-  // 2) Insert placeholder into body (e.g. user clicks "NAME" -> adds "{{NAME}}")
+  // Insert placeholder into body (e.g., user clicks "NAME" -> adds "{{NAME}}")
   const insertPlaceholder = (columnName) => {
     const placeholder = `{{${columnName}}}`;
     setBody((prev) => prev + placeholder);
   };
 
-  // 3) Send the campaign to the server
-  const handleSendCampaign = async (e) => {
-    e.preventDefault();
+  // Send the campaign to the server
+  const handleSendCampaign = async () => {
     setErrorMessage('');
     setSuccessMessage('');
 
@@ -160,7 +159,11 @@ function HomePage() {
       {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
       {successMessage && <div style={styles.successBox}>{successMessage}</div>}
 
-      <form onSubmit={handleSendCampaign} style={{ marginBottom: '20px' }}>
+      {/* 
+        Use a simple div instead of a <form onSubmit>, 
+        so pressing Enter won't auto-send. 
+      */}
+      <div style={{ marginBottom: '20px' }}>
         {/* SUBJECT */}
         <div style={styles.formGroup}>
           <label style={styles.label}>Subject:</label>
@@ -172,26 +175,7 @@ function HomePage() {
             placeholder="Enter email subject"
           />
         </div>
-    {/* If we have columns, show them so user can insert placeholders */}
-    {columns.length > 0 && (
-        <div style={styles.columnSection}>
-          <strong>Columns Found:</strong>
-          <div style={styles.columnContainer}>
-            {columns.map((colName, i) => (
-              <button
-                key={i}
-                style={styles.columnButton}
-                onClick={() => insertPlaceholder(colName)}
-              >
-                {colName}
-              </button>
-            ))}
-          </div>
-          <p style={styles.columnInfo}>
-            Click a column to insert <code style={styles.inlineCode}>{"{{COLUMN}}"}</code> into the body.
-          </p>
-        </div>
-      )}
+
         {/* BODY */}
         <div style={styles.formGroup}>
           <label style={styles.label}>Body (placeholders allowed):</label>
@@ -216,13 +200,39 @@ function HomePage() {
         </div>
 
         <div style={{ textAlign: 'center', marginTop: '20px' }}>
-          <button type="submit" style={styles.primaryButton}>
+          {/* 
+            type="button" ensures no auto-form submission
+          */}
+          <button 
+            type="button"
+            style={styles.primaryButton}
+            onClick={handleSendCampaign}
+          >
             Send Campaign
           </button>
         </div>
-      </form>
+      </div>
 
-      
+      {/* If we have columns, show them so user can insert placeholders */}
+      {columns.length > 0 && (
+        <div style={styles.columnSection}>
+          <strong>Columns Found:</strong>
+          <div style={styles.columnContainer}>
+            {columns.map((colName, i) => (
+              <button
+                key={i}
+                style={styles.columnButton}
+                onClick={() => insertPlaceholder(colName)}
+              >
+                {colName}
+              </button>
+            ))}
+          </div>
+          <p style={styles.columnInfo}>
+            Click a column to insert <code style={styles.inlineCode}>{"{{COLUMN}}"}</code> into the body.
+          </p>
+        </div>
+      )}
 
       {/* Preview first few rows */}
       {previewRows.length > 0 && (
@@ -231,7 +241,9 @@ function HomePage() {
           <table style={styles.table}>
             <thead style={{ backgroundColor: '#f0f0f0' }}>
               <tr>
-                {columns.map((col, idx) => <th key={idx} style={styles.th}>{col}</th>)}
+                {columns.map((col, idx) => (
+                  <th key={idx} style={styles.th}>{col}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -372,14 +384,14 @@ const styles = {
     marginBottom: '10px'
   },
 
+  formGroup: {
+    marginBottom: '15px'
+  },
   label: {
     display: 'block',
     marginBottom: '6px',
     fontWeight: 'bold',
     color: '#333'
-  },
-  formGroup: {
-    marginBottom: '15px'
   },
   textArea: {
     width: '100%',
