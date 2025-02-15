@@ -8,6 +8,7 @@ const multer = require('multer');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
 require('dotenv').config();
+
 const app = express();
 
 // 1) Connect to MongoDB
@@ -21,9 +22,9 @@ mongoose.connect(process.env.MONGO_URI, {
 // 2) Import the SentMail model
 const SentMail = require('./models/SentMail');
 
-// 3) Configure CORS (allow only the domain in FRONTEND_URL)
+// 3) Configure CORS
 const corsOptions = {
-  origin: 'https://email-camp-ace.vercel.app', // e.g. "http://localhost:3000"
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000', // or your production front-end URL
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 };
@@ -41,118 +42,118 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-/**
- * Helper to replace placeholders in the email body.
- * E.g., if the body has "Dear {{NAME}}",
- * and rowData = { NAME: "Alice", AMOUNT: "500" },
- * we replace "{{NAME}}" with "Alice", etc.
+/** 
+ * Helper to replace placeholders in the template 
+ * e.g. if body has "Dear {{NAME}}", rowData = {NAME: "Alice"} => "Dear Alice"
  */
 function replacePlaceholders(template, rowData) {
   let output = template;
   for (const key of Object.keys(rowData)) {
     const placeholder = `{{${key}}}`;
-    // Use a global regex so multiple occurrences are replaced
+    // Use global regex so multiple occurrences are replaced
     const regex = new RegExp(placeholder, 'g');
     output = output.replace(regex, rowData[key] || '');
   }
   return output;
 }
 
+/** 
+ * Helper to chunk an array into smaller arrays 
+ * e.g. chunkArray([1,2,3,4,5], 2) => [[1,2],[3,4],[5]]
+ */
+function chunkArray(array, chunkSize) {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += chunkSize) {
+    chunks.push(array.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
 /**
- * Endpoint to handle file upload + sending the email campaign
  * POST /upload-campaign
- * Body (formData):
- *  - excelFile (the Excel file)
- *  - subject (string)
- *  - body (string or HTML) with placeholders like {{NAME}}
+ * formData: { excelFile, subject, body }
+ *  - excelFile: the original Excel
+ *  - subject: email subject
+ *  - body: email body (with placeholders)
  */
 app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   try {
-    // Extract subject & body from the form fields
     const { subject, body } = req.body;
-
-    // The uploaded Excel file (in memory)
     const fileBuffer = req.file.buffer;
 
-    // Parse the file with SheetJS
+    // Parse Excel
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0]; // Use the first sheet
+    const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-
-    // Convert the sheet to JSON row-by-row (array of arrays), with the 1st row as header
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-    // Check if there's at least one header row + data
     if (jsonData.length < 2) {
-      return res.status(400).json({
-        message: 'Excel file is empty or missing data.'
-      });
+      return res.status(400).json({ message: 'Excel file is empty or missing data.' });
     }
 
-    // The first row is the header (e.g., ["Email", "NAME", "AMOUNT", "GIFT_CODE", ...])
+    // Identify columns
     const headerRow = jsonData[0];
-    // Find the index of the "Email" column
     const emailIndex = headerRow.indexOf("Email");
     if (emailIndex === -1) {
       return res.status(400).json({
-        message: 'No "Email" column found in the Excel file. Please ensure you have a header row with "Email".'
+        message: 'No "Email" column found. Please ensure header row has "Email".'
       });
     }
 
-    // We'll store how many emails were actually sent
-    let sentCount = 0;
-
-    // Process each subsequent row
+    // Build an array of row objects
+    const rowsData = [];
     for (let i = 1; i < jsonData.length; i++) {
       const row = jsonData[i];
-      // e.g. row might be ["alice@example.com", "Alice", "500", "ABCD-1234-XXXX"]
+      if (!row || row.length === 0) continue;
 
-      // If this row doesn't have a valid email in the emailIndex column, skip
       const email = row[emailIndex];
-      if (!email || typeof email !== 'string') {
-        continue;
-      }
+      if (!email || typeof email !== 'string') continue; // skip invalid emails
 
-      // Build an object that maps columnName -> rowValue
-      // e.g. if headerRow = ["Email","NAME","AMOUNT"]
-      // and row = ["alice@example.com", "Alice", "500"]
-      // then rowData = { Email:"alice@example.com", NAME:"Alice", AMOUNT:"500" }
+      // Create a rowData object with key=headerRow[col], value=row[col]
       const rowData = {};
       for (let col = 0; col < headerRow.length; col++) {
-        const columnName = headerRow[col];
-        const cellValue = row[col] || '';
-        rowData[columnName] = cellValue.toString().trim();
+        const key = headerRow[col];
+        rowData[key] = (row[col] || '').toString().trim();
       }
+      rowsData.push(rowData);
+    }
 
-      // Replace placeholders in the body with rowData
-      const personalizedBody = replacePlaceholders(body, rowData);
+    // Chunk the rows to avoid timeouts
+    const chunkSize = 10; // send 10 emails at a time
+    const chunks = chunkArray(rowsData, chunkSize);
 
-      // Create the mail options
-      const mailOptions = {
-        from: process.env.GMAIL_USER,
-        to: email.trim(),
-        subject: subject,
-        // If your body is HTML with tags + placeholders, we do `html: personalizedBody`
-        // If just text, or you prefer HTML anyway, it's up to you. We'll assume HTML here:
-        html: personalizedBody
-      };
+    let totalSent = 0;
 
-      // Send the email
-      await transporter.sendMail(mailOptions);
+    // Send each chunk sequentially
+    for (const chunk of chunks) {
+      for (const rowData of chunk) {
+        const recipientEmail = rowData["Email"];
+        // Replace placeholders
+        const personalizedBody = replacePlaceholders(body, rowData);
 
-      // Store the final (personalized) email data in MongoDB
-      await SentMail.create({
-        recipient: email.trim(),
-        subject: subject,
-        body: personalizedBody
-        // sentAt defaults to Date.now per the schema
-      });
+        // Send mail
+        await transporter.sendMail({
+          from: process.env.GMAIL_USER,
+          to: recipientEmail,
+          subject: subject,
+          html: personalizedBody
+        });
 
-      sentCount++;
+        // Store the final (personalized) email in DB
+        await SentMail.create({
+          recipient: recipientEmail,
+          subject: subject,
+          body: personalizedBody
+        });
+
+        totalSent++;
+      }
+      // Optional: short delay between chunks (if necessary)
+      // await new Promise(r => setTimeout(r, 2000));
     }
 
     return res.status(200).json({
-      message: `Campaign sent to ${sentCount} recipients.`
+      message: `Campaign sent to ${totalSent} recipients.`
     });
   } catch (error) {
     console.error('Error in /upload-campaign:', error);
@@ -163,18 +164,18 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   }
 });
 
+/** GET /sent-mails => returns all sent mails */
 app.get('/sent-mails', async (req, res) => {
-    try {
-      const mails = await SentMail.find().sort({ sentAt: -1 });
-      return res.json(mails);
-    } catch (error) {
-      console.error('Error fetching sent mails:', error);
-      return res.status(500).json({ error: error.message });
-    }
-  });
+  try {
+    const mails = await SentMail.find().sort({ sentAt: -1 });
+    return res.json(mails);
+  } catch (error) {
+    console.error('Error fetching sent mails:', error);
+    return res.status(500).json({ error: error.message });
+  }
+});
 
-// Start the Express server
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
