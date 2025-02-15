@@ -4,6 +4,7 @@ import axios from 'axios';
 function SentMailsPage() {
   // Hardcoded passcode for demonstration
   const PASSCODE = "12345";
+  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
   const [enteredPasscode, setEnteredPasscode] = useState("");
   const [isAuthorized, setIsAuthorized] = useState(false);
@@ -13,7 +14,7 @@ function SentMailsPage() {
   useEffect(() => {
     if (isAuthorized) {
       // Replace with your actual server endpoint
-      axios.get('http://localhost:3001/sent-mails')
+      axios.get(`${BACKEND_URL}/sent-mails`)
         .then(response => {
           setMails(response.data);
         })
