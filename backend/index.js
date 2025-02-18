@@ -24,7 +24,7 @@ const SentMail = require('./models/SentMail');
 
 // 3) Configure CORS
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000', // or your production front-end URL
+  origin: process.env.FRONTEND_URL , // or your production front-end URL|| 'http://localhost:3000'
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 };
@@ -119,7 +119,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     }
 
     // Chunk the rows to avoid timeouts
-    const chunkSize = 50; // send 10 emails at a time
+    const chunkSize = 10; // send 10 emails at a time
     const chunks = chunkArray(rowsData, chunkSize);
 
     let totalSent = 0;
