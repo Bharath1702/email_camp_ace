@@ -24,7 +24,7 @@ const SentMail = require('./models/SentMail');
 
 // 3) Configure CORS
 const corsOptions = {
-  origin: process.env.FRONTEND_URL , // or your production front-end URL|| 'http://localhost:3000'
+  origin: 'https://email-camp-ace.vercel.app' , // or your production front-end URL|| 'http://localhost:3000'
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 };
