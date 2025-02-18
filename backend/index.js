@@ -119,7 +119,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     }
 
     // Chunk the rows to avoid timeouts
-    const chunkSize = 10; // send 10 emails at a time
+    const chunkSize = 50; // send 10 emails at a time
     const chunks = chunkArray(rowsData, chunkSize);
 
     let totalSent = 0;
