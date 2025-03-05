@@ -66,7 +66,7 @@ function replacePlaceholders(template, rowData) {
 }
 
 /**
- * Retry helper for temporary SMTP errors (like error code 421)
+ * Retry helper for temporary SMTP errors (e.g. error code 421)
  */
 async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -91,8 +91,12 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
  *  - subject: email subject
  *  - body: email body (HTML with placeholders)
  *
- * The endpoint parses the Excel file, assigns an order based on the row index
- * (starting at 0), sends the email, and stores each record.
+ * This endpoint:
+ *  1. Parses the Excel file (which must include a header row with "Email").
+ *  2. Determines the current batch number (incrementing from the previous batch).
+ *  3. For each data row, it assigns a sequence number and sends the email.
+ *  4. Stores each record with its batch and seq values.
+ *  5. Emits a socket.io event for real-time updates.
  */
 app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   try {
@@ -109,7 +113,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       return res.status(400).json({ message: 'Excel file is empty or missing data.' });
     }
 
-    // The header row must contain "Email"
+    // Header row must contain "Email"
     const headerRow = jsonData[0];
     const emailIndex = headerRow.indexOf("Email");
     if (emailIndex === -1) {
@@ -118,7 +122,11 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       });
     }
 
-    // Process each data row and assign order (starting at 0 or index+1 if desired)
+    // Determine current batch number by finding the highest batch value in SentMail
+    const lastRecord = await SentMail.findOne().sort({ batch: -1 });
+    const currentBatch = lastRecord && lastRecord.batch ? lastRecord.batch + 1 : 1;
+
+    // Process each data row and assign a sequence number
     const emailPromises = jsonData.slice(1).map(async (row, index) => {
       const email = row[emailIndex];
       if (!email || typeof email !== 'string') return null;
@@ -130,11 +138,11 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       });
       const recipientEmail = rowData["Email"];
 
-      // Check for duplicates (same recipient and subject)
+      // Check for duplicate: same recipient and subject
       const duplicate = await SentMail.findOne({ recipient: recipientEmail, subject });
-      if (duplicate) return { recipient: recipientEmail, status: 'duplicate', order: index };
+      if (duplicate) return { recipient: recipientEmail, status: 'duplicate', batch: currentBatch, seq: index + 1 };
 
-      // Replace placeholders in the email body
+      // Replace placeholders in the email body template
       const personalizedBody = replacePlaceholders(body, rowData);
 
       const mailOptions = {
@@ -144,20 +152,21 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
         html: personalizedBody
       };
 
-      // Send the email with retry logic
+      // Send email with retry logic
       await retrySend(mailOptions);
 
-      // Save the sent email record (order is assigned as index, adjust to index+1 if needed)
+      // Save the sent email record with batch and sequence number
       const record = await SentMail.create({
         recipient: recipientEmail,
         subject,
         body: personalizedBody,
-        order: index // or use index + 1 if you want to start numbering at 1
+        batch: currentBatch,
+        seq: index + 1
       });
 
-      // Emit a real-time update via socket.io
+      // Emit real-time update via socket.io
       io.emit('newEmail', record);
-      return { recipient: recipientEmail, status: 'sent', order: index };
+      return { recipient: recipientEmail, status: 'sent', batch: currentBatch, seq: index + 1 };
     });
 
     const results = await Promise.all(emailPromises);
@@ -165,7 +174,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
 
     return res.status(200).json({
       statuses,
-      message: `Campaign processed. ${statuses.filter(s => s.status === 'sent').length} emails sent.`
+      message: `Campaign processed. ${statuses.filter(s => s.status === 'sent').length} emails sent in batch ${currentBatch}.`
     });
   } catch (error) {
     console.error('Error in /upload-campaign:', error);
@@ -178,11 +187,11 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
 
 /**
  * GET /sent-mails
- * Returns all sent email records sorted by the order field.
+ * Returns all sent email records sorted by batch and sequence in ascending order.
  */
 app.get('/sent-mails', async (req, res) => {
   try {
-    const mails = await SentMail.find().sort({ order: 1 });
+    const mails = await SentMail.find().sort({ batch: 1, seq: 1 });
     return res.json(mails);
   } catch (error) {
     console.error('Error fetching sent mails:', error);

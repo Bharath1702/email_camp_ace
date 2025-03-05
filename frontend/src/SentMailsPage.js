@@ -5,20 +5,19 @@ import { toast } from 'react-toastify';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-// Helper component for clamping email body and toggling image view
+// Helper component to display email body with clamping and image toggle
 function EmailBody({ body }) {
   const [expanded, setExpanded] = useState(false);
   const [showImage, setShowImage] = useState(false);
 
-  // Regex to detect an <img> tag and capture its src attribute
+  // Detect an <img> tag and extract its src attribute
   const imgRegex = /<img\s+[^>]*src=["']([^"']+)["'][^>]*>/i;
   const imgMatch = body.match(imgRegex);
   const imageSrc = imgMatch ? imgMatch[1] : null;
-  
-  // Remove the image tag from the displayed body
+  // Remove image tag from the body
   const bodyWithoutImage = imageSrc ? body.replace(imgRegex, '') : body;
 
-  // Clamp style: if not expanded, show only 3 lines
+  // Clamp to 3 lines if not expanded
   const clampStyle = expanded
     ? {}
     : {
@@ -60,6 +59,10 @@ function EmailBody({ body }) {
 
 function SentMailsPage() {
   const [mails, setMails] = useState([]);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('');
+  const [recipientFilter, setRecipientFilter] = useState('');
 
   // Fetch sent emails from the backend
   const loadMails = async () => {
@@ -82,13 +85,77 @@ function SentMailsPage() {
     return () => socket.disconnect();
   }, []);
 
+  // Apply filters: date range, subject, and recipient
+  const filteredMails = mails.filter(mail => {
+    const sentDate = new Date(mail.sentAt);
+    if (fromDate) {
+      const from = new Date(fromDate);
+      if (sentDate < from) return false;
+    }
+    if (toDate) {
+      const to = new Date(toDate);
+      to.setHours(23, 59, 59, 999);
+      if (sentDate > to) return false;
+    }
+    if (subjectFilter && !mail.subject.toLowerCase().includes(subjectFilter.toLowerCase())) {
+      return false;
+    }
+    if (recipientFilter && !mail.recipient.toLowerCase().includes(recipientFilter.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
+
   return (
     <div style={styles.container}>
       <h1 style={styles.heading}>All Sent Emails</h1>
+
+      {/* Filter Section */}
+      <div style={styles.filterContainer}>
+        <div style={styles.filterGroup}>
+          <label style={styles.filterLabel}>From:</label>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            style={styles.dateInput}
+          />
+        </div>
+        <div style={styles.filterGroup}>
+          <label style={styles.filterLabel}>To:</label>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            style={styles.dateInput}
+          />
+        </div>
+        <div style={styles.filterGroup}>
+          <label style={styles.filterLabel}>Subject:</label>
+          <input
+            type="text"
+            value={subjectFilter}
+            onChange={(e) => setSubjectFilter(e.target.value)}
+            style={styles.textInput}
+            placeholder="Filter by subject"
+          />
+        </div>
+        <div style={styles.filterGroup}>
+          <label style={styles.filterLabel}>Recipient:</label>
+          <input
+            type="text"
+            value={recipientFilter}
+            onChange={(e) => setRecipientFilter(e.target.value)}
+            style={styles.textInput}
+            placeholder="Filter by recipient"
+          />
+        </div>
+      </div>
+
       <table style={styles.table}>
         <thead style={styles.tableHeader}>
           <tr>
-            <th style={styles.th}>Order</th>
+            <th style={styles.th}>Order (Batch,Seq)</th>
             <th style={styles.th}>Recipient</th>
             <th style={styles.th}>Subject</th>
             <th style={styles.th}>Body</th>
@@ -96,9 +163,13 @@ function SentMailsPage() {
           </tr>
         </thead>
         <tbody>
-          {mails.map(mail => (
+          {filteredMails.map(mail => (
             <tr key={mail._id}>
-              <td style={styles.td}>{mail.order !== undefined ? mail.order : '-'}</td>
+              <td style={styles.td}>
+                {mail.batch !== undefined && mail.seq !== undefined
+                  ? `${mail.batch},${mail.seq}`
+                  : '-'}
+              </td>
               <td style={styles.td}>{mail.recipient}</td>
               <td style={styles.td}>{mail.subject}</td>
               <td style={styles.td}>
@@ -121,6 +192,34 @@ const styles = {
   heading: {
     textAlign: 'center',
     marginBottom: '20px'
+  },
+  filterContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '20px',
+    flexWrap: 'wrap',
+    marginBottom: '20px'
+  },
+  filterGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start'
+  },
+  filterLabel: {
+    marginBottom: '5px',
+    fontWeight: 'bold'
+  },
+  dateInput: {
+    padding: '5px',
+    fontSize: '1rem',
+    borderRadius: '4px',
+    border: '1px solid #ccc'
+  },
+  textInput: {
+    padding: '5px',
+    fontSize: '1rem',
+    borderRadius: '4px',
+    border: '1px solid #ccc'
   },
   table: {
     width: '100%',
