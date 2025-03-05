@@ -1,153 +1,128 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { toast } from 'react-toastify';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 
-// 5-digit passcode (hardcoded or read from environment variable)
-const FRONTEND_PASSCODE = "54321";
-
-// Access the backend URL from .env
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 function HomePage() {
-  // *******************
-  // PASSCODE LOGIC
-  // *******************
-  const [enteredPasscode, setEnteredPasscode] = useState("");
-  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [excelFile, setExcelFile] = useState(null);
+  const [columns, setColumns] = useState([]);
+  const [previewRows, setPreviewRows] = useState([]);
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState(''); // rich text (HTML)
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handlePasscodeSubmit = (e) => {
-    e.preventDefault();
-    if (enteredPasscode === FRONTEND_PASSCODE) {
-      setIsAuthorized(true);
-    } else {
-      alert("Incorrect passcode. Please try again.");
+  // Safe focus handler for standard inputs
+  const handleFocus = (e) => {
+    if (e && e.target && typeof e.target.scrollIntoView === 'function') {
+      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
 
-  // *******************
-  // EMAIL CAMPAIGN LOGIC
-  // *******************
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [file, setFile] = useState(null);
-
-  // For parsing Excel client-side (show columns, preview)
-  const [columns, setColumns] = useState([]);
-  const [previewRows, setPreviewRows] = useState([]);
-
-  // For error/success messages
-  const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-
-  // Handle file change: parse the file to show columns, preview
-  const handleFileChange = async (e) => {
-    const selectedFile = e.target.files[0];
-    setFile(selectedFile);
+  // Process the file (either from drop or input)
+  const processFile = async (file) => {
+    setExcelFile(file);
     setColumns([]);
     setPreviewRows([]);
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    if (!selectedFile) return;
-
+    if (!file) return;
     try {
-      // Parse the file in the browser via SheetJS
-      const data = await selectedFile.arrayBuffer();
+      const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
       if (jsonData.length === 0) {
-        setErrorMessage('Excel file is empty.');
+        toast.error('Excel file is empty.');
         return;
       }
-
-      // The first row is columns
       const headerRow = jsonData[0];
       setColumns(headerRow || []);
-
-      // Show up to 5 data rows as a preview
-      const dataRows = jsonData.slice(1, 6);
-      setPreviewRows(dataRows);
+      setPreviewRows(jsonData.slice(1, 6));
     } catch (err) {
       console.error(err);
-      setErrorMessage('Error parsing Excel file.');
+      toast.error('Error parsing Excel file.');
     }
   };
 
-  // Insert placeholder into body (e.g., user clicks "NAME" -> adds "{{NAME}}")
-  const insertPlaceholder = (columnName) => {
-    const placeholder = `{{${columnName}}}`;
-    setBody((prev) => prev + placeholder);
+  // Handler for file selection via input
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    processFile(file);
   };
 
-  // Send the campaign to the server
-  const handleSendCampaign = async () => {
-    setErrorMessage('');
-    setSuccessMessage('');
+  // Drag & Drop Handlers
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
 
-    if (!file) {
-      setErrorMessage('Please select an Excel file first.');
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      processFile(file);
+      e.dataTransfer.clearData();
+    }
+  }, []);
+
+  // Insert placeholder into the rich text body
+  const insertPlaceholder = (columnName) => {
+    setBody(prev => prev + `{{${columnName}}}`);
+  };
+
+  // Send campaign request
+  const handleSendCampaign = async () => {
+    if (!excelFile) {
+      toast.error('Please select an Excel file.');
       return;
     }
     if (!subject) {
-      setErrorMessage('Please enter a subject.');
+      toast.error('Please enter a subject.');
       return;
     }
     if (!body) {
-      setErrorMessage('Please enter a body (or placeholders).');
+      toast.error('Please enter the email body.');
       return;
     }
+    const formData = new FormData();
+    formData.append('excelFile', excelFile);
+    formData.append('subject', subject);
+    formData.append('body', body);
 
     try {
-      const formData = new FormData();
-      formData.append('excelFile', file);
-      formData.append('subject', subject);
-      formData.append('body', body);
-
-      const response = await axios.post(
-        `${BACKEND_URL}/upload-campaign`,
-        formData,
-        {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        }
-      );
-
-      setSuccessMessage(response.data.message || 'Emails sent successfully!');
+      const response = await axios.post(`${BACKEND_URL}/upload-campaign`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      toast.success(response.data.message || 'Campaign sent successfully!');
     } catch (err) {
       console.error(err);
-      setErrorMessage(err.response?.data?.message || 'Error sending campaign.');
+      toast.error(err.response?.data?.message || 'Error sending campaign.');
     }
   };
 
-  // *******************
-  // RENDER
-  // *******************
+  // ReactQuill modules configuration (toolbar)
+  const modules = {
+    toolbar: [
+      [{ header: [1, 2, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ list: 'ordered' }, { list: 'bullet' }],
+      ['link', 'image'],
+      ['clean']
+    ]
+  };
 
-  // If user is NOT authorized, show passcode screen
-  if (!isAuthorized) {
-    return (
-      <div style={styles.passcodeContainer}>
-        <h1 style={styles.title}>Enter 5-Digit Passcode</h1>
-        <form onSubmit={handlePasscodeSubmit} style={styles.form}>
-          <input
-            type="password"
-            maxLength={5}
-            value={enteredPasscode}
-            onChange={(e) => setEnteredPasscode(e.target.value)}
-            style={styles.input}
-            placeholder="12345"
-          />
-          <button type="submit" style={styles.button}>
-            Submit
-          </button>
-        </form>
-      </div>
-    );
-  }
-
-  // If user IS authorized, show the main campaign UI
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -155,91 +130,76 @@ function HomePage() {
         <a href="/sent-mails" style={styles.linkButton}>View Sent Mails</a>
       </header>
 
-      {/* Error / Success Messages */}
-      {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
-      {successMessage && <div style={styles.successBox}>{successMessage}</div>}
-
-      {/* 
-        Use a simple div instead of a <form onSubmit>, 
-        so pressing Enter won't auto-send. 
-      */}
-      <div style={{ marginBottom: '20px' }}>
-        {/* SUBJECT */}
-        <div style={styles.formGroup}>
-          <label style={styles.label}>Subject:</label>
+      {/* Drag & Drop Excel Uploader */}
+      <div 
+        style={{
+          ...styles.uploaderContainer,
+          border: isDragging ? '2px dashed #0056b3' : '2px dashed #007bff'
+        }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div style={styles.excelUploader} onClick={() => document.getElementById('excelInput').click()}>
+          <span style={styles.plusSign}>+</span>
+          <p style={styles.uploadText}>Choose or Drag & Drop Excel File</p>
           <input
-            type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            style={styles.input}
-            placeholder="Enter email subject"
-          />
-        </div>
-
-        {/* BODY */}
-        <div style={styles.formGroup}>
-          <label style={styles.label}>Body (placeholders allowed):</label>
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            rows="4"
-            style={styles.textArea}
-            placeholder="Use placeholders like {{NAME}}, {{AMOUNT}}..."
-          />
-        </div>
-
-        {/* FILE */}
-        <div style={styles.formGroup}>
-          <label style={styles.label}>Select Excel File (xlsx, xls, or csv):</label>
-          <input
+            id="excelInput"
             type="file"
             accept=".xlsx, .xls, .csv"
             onChange={handleFileChange}
-            style={styles.fileInput}
+            style={{ display: 'none' }}
           />
-        </div>
-
-        <div style={{ textAlign: 'center', marginTop: '20px' }}>
-          {/* 
-            type="button" ensures no auto-form submission
-          */}
-          <button 
-            type="button"
-            style={styles.primaryButton}
-            onClick={handleSendCampaign}
-          >
-            Send Campaign
-          </button>
         </div>
       </div>
 
-      {/* If we have columns, show them so user can insert placeholders */}
       {columns.length > 0 && (
         <div style={styles.columnSection}>
-          <strong>Columns Found:</strong>
+          <strong style={styles.columnTitle}>Columns Found:</strong>
           <div style={styles.columnContainer}>
             {columns.map((colName, i) => (
-              <button
-                key={i}
-                style={styles.columnButton}
-                onClick={() => insertPlaceholder(colName)}
-              >
+              <button key={i} style={styles.columnButton} onClick={() => insertPlaceholder(colName)}>
                 {colName}
               </button>
             ))}
           </div>
-          <p style={styles.columnInfo}>
-            Click a column to insert <code style={styles.inlineCode}>{"{{COLUMN}}"}</code> into the body.
-          </p>
         </div>
       )}
 
-      {/* Preview first few rows */}
+      <div style={styles.formGroup}>
+        <label style={styles.label}>Subject:</label>
+        <input
+          type="text"
+          value={subject}
+          onChange={e => setSubject(e.target.value)}
+          onFocus={handleFocus}
+          style={styles.input}
+          placeholder="Enter email subject"
+        />
+      </div>
+
+      <div style={styles.formGroup}>
+        <label style={styles.label}>Body (template editable):</label>
+        <ReactQuill
+          value={body}
+          onChange={setBody}
+          modules={modules}
+          style={styles.richTextEditor}
+          placeholder="Type your email template here..."
+        />
+      </div>
+
+      <div style={styles.buttonContainer}>
+        <button type="button" style={styles.primaryButton} onClick={handleSendCampaign}>
+          Send Campaign
+        </button>
+      </div>
+
       {previewRows.length > 0 && (
         <div style={styles.previewSection}>
           <strong>Preview (first 5 rows):</strong>
           <table style={styles.table}>
-            <thead style={{ backgroundColor: '#f0f0f0' }}>
+            <thead style={styles.tableHeader}>
               <tr>
                 {columns.map((col, idx) => (
                   <th key={idx} style={styles.th}>{col}</th>
@@ -259,15 +219,13 @@ function HomePage() {
         </div>
       )}
 
-      {/* Excel template info */}
       <hr style={styles.divider} />
       <h3 style={styles.sectionTitle}>Excel Template Reference</h3>
-      <p style={{ textAlign: 'center', marginBottom: '20px' }}>
+      <p style={styles.referenceText}>
         Your Excel file should have a header row with a column named <strong>“Email”</strong>.
       </p>
-
       <table style={styles.table}>
-        <thead style={{ backgroundColor: '#f0f0f0' }}>
+        <thead style={styles.tableHeader}>
           <tr>
             <th style={styles.th}>Email</th>
             <th style={styles.th}>Name (optional)</th>
@@ -288,141 +246,74 @@ function HomePage() {
           </tr>
         </tbody>
       </table>
-
-      <div style={{ textAlign: 'center', marginTop: '20px' }}>
-        <a href="/template.xlsx" download="email_template.xlsx" style={styles.downloadLink}>
-          <button type="button" style={styles.secondaryButton}>
-            Download Excel Template
-          </button>
-        </a>
-      </div>
     </div>
   );
 }
 
-/* Inline Styles */
 const styles = {
-  /* PASSCODE SCREEN STYLES */
-  passcodeContainer: {
-    margin: '100px auto',
-    width: '90%',
-    maxWidth: '320px',
-    textAlign: 'center',
-    fontFamily: 'sans-serif',
-    border: '1px solid #ccc',
-    padding: '30px',
-    borderRadius: '8px',
-    boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-  },
-  title: {
-    marginBottom: '20px',
-    fontSize: '1.3rem'
-  },
-  form: {
-    marginTop: '20px'
-  },
-  input: {
-    padding: '10px',
-    fontSize: '1rem',
-    width: '100%',
-    marginBottom: '10px',
-    borderRadius: '4px',
-    border: '1px solid #ccc'
-  },
-  button: {
-    padding: '10px 20px',
-    fontSize: '1rem',
-    cursor: 'pointer',
-    borderRadius: '4px',
-    border: 'none',
-    backgroundColor: '#007bff',
-    color: '#fff'
-  },
-
-  /* MAIN CAMPAIGN PAGE STYLES */
   container: {
-    maxWidth: '850px',
+    maxWidth: '900px',
     margin: '40px auto',
     padding: '30px',
     backgroundColor: '#fafafa',
     borderRadius: '8px',
-    boxShadow: '0 2px 5px rgba(0, 0, 0, 0.15)',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
     fontFamily: 'Arial, sans-serif'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '20px'
+    marginBottom: '30px'
   },
   mainHeading: {
-    margin: 0,
     fontSize: '1.8rem',
-    color: '#333'
+    color: '#333',
+    margin: 0
   },
   linkButton: {
     backgroundColor: '#6c757d',
     color: '#fff',
     padding: '10px 15px',
     textDecoration: 'none',
-    borderRadius: '4px',
-    fontSize: '0.9rem'
+    borderRadius: '4px'
   },
-
-  errorBox: {
-    backgroundColor: '#f8d7da',
-    color: '#721c24',
-    padding: '10px',
-    borderRadius: '5px',
-    marginBottom: '10px'
+  uploaderContainer: {
+    display: 'flex',
+    justifyContent: 'center',
+    marginBottom: '20px'
   },
-  successBox: {
-    backgroundColor: '#d4edda',
-    color: '#155724',
-    padding: '10px',
-    borderRadius: '5px',
-    marginBottom: '10px'
-  },
-
-  formGroup: {
-    marginBottom: '15px'
-  },
-  label: {
-    display: 'block',
-    marginBottom: '6px',
-    fontWeight: 'bold',
-    color: '#333'
-  },
-  textArea: {
-    width: '100%',
-    padding: '8px 10px',
-    marginBottom: '5px',
-    border: '1px solid #ccc',
-    borderRadius: '4px',
-    fontSize: '1rem'
-  },
-  fileInput: {
-    marginBottom: '5px'
-  },
-  primaryButton: {
-    padding: '12px 30px',
-    backgroundColor: '#007bff',
-    color: '#fff',
+  excelUploader: {
     border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '1rem'
+    width: '250px',
+    height: '150px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer'
   },
-
+  plusSign: {
+    fontSize: '3rem',
+    color: '#007bff',
+    marginBottom: '10px'
+  },
+  uploadText: {
+    fontSize: '1.1rem',
+    color: '#007bff',
+    margin: 0
+  },
   columnSection: {
     marginBottom: '20px',
     padding: '10px',
-    backgroundColor: '#f9f9f9',
-    borderRadius: '6px',
-    border: '1px solid #ccc'
+    backgroundColor: '#eef',
+    borderRadius: '6px'
+  },
+  columnTitle: {
+    marginBottom: '10px',
+    fontSize: '1rem'
   },
   columnContainer: {
-    marginTop: '10px',
     display: 'flex',
     flexWrap: 'wrap',
     gap: '10px'
@@ -435,18 +326,41 @@ const styles = {
     cursor: 'pointer',
     fontWeight: 'bold'
   },
-  columnInfo: {
-    marginTop: '5px',
-    fontSize: '0.9rem'
+  formGroup: {
+    marginBottom: '20px'
   },
-  inlineCode: {
-    backgroundColor: '#f0f0f0',
-    padding: '2px 4px',
-    borderRadius: '3px'
+  label: {
+    display: 'block',
+    marginBottom: '8px',
+    fontWeight: 'bold',
+    color: '#333'
   },
-
+  input: {
+    padding: '10px',
+    fontSize: '1rem',
+    width: '100%',
+    borderRadius: '4px',
+    border: '1px solid #ccc'
+  },
+  richTextEditor: {
+    height: '300px',
+    marginBottom: '10px'
+  },
+  buttonContainer: {
+    textAlign: 'center',
+    marginTop: '20px'
+  },
+  primaryButton: {
+    padding: '12px 30px',
+    backgroundColor: '#007bff',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '1rem'
+  },
   previewSection: {
-    marginBottom: '20px',
+    marginBottom: '30px',
     padding: '10px',
     backgroundColor: '#fdfdfd',
     borderRadius: '6px',
@@ -458,6 +372,9 @@ const styles = {
     marginTop: '10px',
     fontSize: '0.95rem'
   },
+  tableHeader: {
+    backgroundColor: '#f0f0f0'
+  },
   th: {
     padding: '8px',
     textAlign: 'left',
@@ -467,7 +384,6 @@ const styles = {
     padding: '8px',
     border: '1px solid #ccc'
   },
-
   divider: {
     margin: '30px 0'
   },
@@ -475,18 +391,9 @@ const styles = {
     textAlign: 'center',
     marginBottom: '10px'
   },
-
-  secondaryButton: {
-    padding: '10px 20px',
-    backgroundColor: '#28a745',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '1rem'
-  },
-  downloadLink: {
-    textDecoration: 'none'
+  referenceText: {
+    textAlign: 'center',
+    marginBottom: '20px'
   }
 };
 

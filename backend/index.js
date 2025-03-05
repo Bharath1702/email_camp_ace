@@ -1,5 +1,5 @@
 /***********************
-  SERVER (Node/Express)
+  SERVER (Node/Express with Socket.io)
 ***********************/
 const express = require('express');
 const cors = require('cors');
@@ -7,11 +7,22 @@ const nodemailer = require('nodemailer');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
+const http = require('http');
+const socketIo = require('socket.io');
 require('dotenv').config();
 
-const app = express();
+const SentMail = require('./models/SentMail');
 
-// 1) Connect to MongoDB
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || '*',
+    methods: ['GET', 'POST']
+  }
+});
+
+// Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -19,69 +30,76 @@ mongoose.connect(process.env.MONGO_URI, {
 .then(() => console.log('MongoDB connected successfully!'))
 .catch((error) => console.error('MongoDB connection error:', error));
 
-// 2) Import the SentMail model
-const SentMail = require('./models/SentMail');
-
-// 3) Configure CORS
-const corsOptions = {
-  origin: 'https://email-camp-ace.vercel.app' , // or your production front-end URL|| 'http://localhost:3000'
+// Configure CORS
+app.use(cors({
+  origin: process.env.FRONTEND_URL || '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
-};
-app.use(cors(corsOptions));
+}));
 
-// Multer setup: store uploaded file in memory
+// Multer setup: Only one Excel file is uploaded.
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Nodemailer transporter (using Gmail + App Password)
+// Nodemailer transporter (using Gmail)
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.GMAIL_USER,  // e.g. "your_gmail_username@gmail.com"
-    pass: process.env.GMAIL_PASS   // e.g. "abcd efgh ijkl mnop"
+    pass: process.env.GMAIL_PASS   // e.g. "your_app_password"
   }
 });
 
-/** 
- * Helper to replace placeholders in the template 
- * e.g. if body has "Dear {{NAME}}", rowData = {NAME: "Alice"} => "Dear Alice"
+/**
+ * Helper to replace placeholders in the email body.
+ * For example, if the template contains "Dear {{NAME}}"
+ * and rowData = { NAME: "Alice", AMOUNT: "500" },
+ * it returns "Dear Alice".
  */
 function replacePlaceholders(template, rowData) {
   let output = template;
   for (const key of Object.keys(rowData)) {
     const placeholder = `{{${key}}}`;
-    // Use global regex so multiple occurrences are replaced
     const regex = new RegExp(placeholder, 'g');
     output = output.replace(regex, rowData[key] || '');
   }
   return output;
 }
 
-/** 
- * Helper to chunk an array into smaller arrays 
- * e.g. chunkArray([1,2,3,4,5], 2) => [[1,2],[3,4],[5]]
+/**
+ * Retry helper for temporary SMTP errors (like error code 421)
  */
-function chunkArray(array, chunkSize) {
-  const chunks = [];
-  for (let i = 0; i < array.length; i += chunkSize) {
-    chunks.push(array.slice(i, i + chunkSize));
+async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await transporter.sendMail(mailOptions);
+      return;
+    } catch (error) {
+      if (error.responseCode === 421 && attempt < retries) {
+        console.warn(`Temporary error sending to ${mailOptions.to}. Retrying attempt ${attempt}...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        throw error;
+      }
+    }
   }
-  return chunks;
 }
 
 /**
  * POST /upload-campaign
- * formData: { excelFile, subject, body }
- *  - excelFile: the original Excel
+ * Expects FormData with:
+ *  - excelFile: the uploaded Excel file
  *  - subject: email subject
- *  - body: email body (with placeholders)
+ *  - body: email body (HTML with placeholders)
+ *
+ * The endpoint parses the Excel file, assigns an order based on the row index
+ * (starting at 0), sends the email, and stores each record.
  */
 app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   try {
     const { subject, body } = req.body;
     const fileBuffer = req.file.buffer;
 
-    // Parse Excel
+    // Parse the Excel file
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
@@ -91,69 +109,63 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       return res.status(400).json({ message: 'Excel file is empty or missing data.' });
     }
 
-    // Identify columns
+    // The header row must contain "Email"
     const headerRow = jsonData[0];
     const emailIndex = headerRow.indexOf("Email");
     if (emailIndex === -1) {
       return res.status(400).json({
-        message: 'No "Email" column found. Please ensure header row has "Email".'
+        message: 'No "Email" column found. Please ensure the header row includes "Email".'
       });
     }
 
-    // Build an array of row objects
-    const rowsData = [];
-    for (let i = 1; i < jsonData.length; i++) {
-      const row = jsonData[i];
-      if (!row || row.length === 0) continue;
-
+    // Process each data row and assign order (starting at 0 or index+1 if desired)
+    const emailPromises = jsonData.slice(1).map(async (row, index) => {
       const email = row[emailIndex];
-      if (!email || typeof email !== 'string') continue; // skip invalid emails
+      if (!email || typeof email !== 'string') return null;
 
-      // Create a rowData object with key=headerRow[col], value=row[col]
+      // Build a rowData object mapping header columns to cell values
       const rowData = {};
-      for (let col = 0; col < headerRow.length; col++) {
-        const key = headerRow[col];
-        rowData[key] = (row[col] || '').toString().trim();
-      }
-      rowsData.push(rowData);
-    }
+      headerRow.forEach((col, idx) => {
+        rowData[col] = (row[idx] || '').toString().trim();
+      });
+      const recipientEmail = rowData["Email"];
 
-    // Chunk the rows to avoid timeouts
-    const chunkSize = 10; // send 10 emails at a time
-    const chunks = chunkArray(rowsData, chunkSize);
+      // Check for duplicates (same recipient and subject)
+      const duplicate = await SentMail.findOne({ recipient: recipientEmail, subject });
+      if (duplicate) return { recipient: recipientEmail, status: 'duplicate', order: index };
 
-    let totalSent = 0;
+      // Replace placeholders in the email body
+      const personalizedBody = replacePlaceholders(body, rowData);
 
-    // Send each chunk sequentially
-    for (const chunk of chunks) {
-      for (const rowData of chunk) {
-        const recipientEmail = rowData["Email"];
-        // Replace placeholders
-        const personalizedBody = replacePlaceholders(body, rowData);
+      const mailOptions = {
+        from: process.env.GMAIL_USER,
+        to: recipientEmail,
+        subject,
+        html: personalizedBody
+      };
 
-        // Send mail
-        await transporter.sendMail({
-          from: process.env.GMAIL_USER,
-          to: recipientEmail,
-          subject: subject,
-          html: personalizedBody
-        });
+      // Send the email with retry logic
+      await retrySend(mailOptions);
 
-        // Store the final (personalized) email in DB
-        await SentMail.create({
-          recipient: recipientEmail,
-          subject: subject,
-          body: personalizedBody
-        });
+      // Save the sent email record (order is assigned as index, adjust to index+1 if needed)
+      const record = await SentMail.create({
+        recipient: recipientEmail,
+        subject,
+        body: personalizedBody,
+        order: index // or use index + 1 if you want to start numbering at 1
+      });
 
-        totalSent++;
-      }
-      // Optional: short delay between chunks (if necessary)
-      // await new Promise(r => setTimeout(r, 2000));
-    }
+      // Emit a real-time update via socket.io
+      io.emit('newEmail', record);
+      return { recipient: recipientEmail, status: 'sent', order: index };
+    });
+
+    const results = await Promise.all(emailPromises);
+    const statuses = results.filter(r => r !== null);
 
     return res.status(200).json({
-      message: `Campaign sent to ${totalSent} recipients.`
+      statuses,
+      message: `Campaign processed. ${statuses.filter(s => s.status === 'sent').length} emails sent.`
     });
   } catch (error) {
     console.error('Error in /upload-campaign:', error);
@@ -164,10 +176,13 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   }
 });
 
-/** GET /sent-mails => returns all sent mails */
+/**
+ * GET /sent-mails
+ * Returns all sent email records sorted by the order field.
+ */
 app.get('/sent-mails', async (req, res) => {
   try {
-    const mails = await SentMail.find().sort({ sentAt: -1 });
+    const mails = await SentMail.find().sort({ order: 1 });
     return res.json(mails);
   } catch (error) {
     console.error('Error fetching sent mails:', error);
@@ -176,6 +191,6 @@ app.get('/sent-mails', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
