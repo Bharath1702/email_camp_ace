@@ -8,12 +8,31 @@ import 'react-quill/dist/quill.snow.css';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 function HomePage() {
+  // Password protection state
+  const [authorized, setAuthorized] = useState(false);
+  const [passcode, setPasscode] = useState('');
+
+  // Main UI state
   const [excelFile, setExcelFile] = useState(null);
   const [columns, setColumns] = useState([]);
   const [previewRows, setPreviewRows] = useState([]);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState(''); // rich text (HTML)
   const [isDragging, setIsDragging] = useState(false);
+
+  // Hardcoded passcode (adjust as needed)
+  const correctPasscode = '12345';
+
+  // Handler for passcode submission
+  const handlePasscodeSubmit = (e) => {
+    e.preventDefault();
+    if (passcode === correctPasscode) {
+      setAuthorized(true);
+      toast.success('Access granted');
+    } else {
+      toast.error('Incorrect passcode. Please try again.');
+    }
+  };
 
   // Safe focus handler for standard inputs
   const handleFocus = (e) => {
@@ -22,7 +41,7 @@ function HomePage() {
     }
   };
 
-  // Process the file (either from drop or input)
+  // Process the file (from drop or input)
   const processFile = async (file) => {
     setExcelFile(file);
     setColumns([]);
@@ -112,7 +131,7 @@ function HomePage() {
     }
   };
 
-  // ReactQuill modules configuration (toolbar)
+  // ReactQuill toolbar configuration
   const modules = {
     toolbar: [
       [{ header: [1, 2, false] }],
@@ -123,6 +142,26 @@ function HomePage() {
     ]
   };
 
+  // If not authorized, show the passcode prompt.
+  if (!authorized) {
+    return (
+      <div style={styles.passcodeContainer}>
+        <h2 style={styles.passcodeHeading}>Enter Passcode to Access</h2>
+        <form onSubmit={handlePasscodeSubmit} style={styles.passcodeForm}>
+          <input
+            type="password"
+            value={passcode}
+            onChange={(e) => setPasscode(e.target.value)}
+            style={styles.passcodeInput}
+            placeholder="Enter passcode"
+          />
+          <button type="submit" style={styles.passcodeButton}>Submit</button>
+        </form>
+      </div>
+    );
+  }
+
+  // Main content when authorized
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -251,6 +290,40 @@ function HomePage() {
 }
 
 const styles = {
+  passcodeContainer: {
+    maxWidth: '400px',
+    margin: '100px auto',
+    padding: '30px',
+    backgroundColor: '#fff',
+    borderRadius: '8px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    textAlign: 'center',
+    fontFamily: 'Arial, sans-serif'
+  },
+  passcodeHeading: {
+    fontSize: '1.5rem',
+    marginBottom: '20px'
+  },
+  passcodeForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px'
+  },
+  passcodeInput: {
+    padding: '10px',
+    fontSize: '1rem',
+    borderRadius: '4px',
+    border: '1px solid #ccc'
+  },
+  passcodeButton: {
+    padding: '10px 20px',
+    backgroundColor: '#007bff',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '1rem'
+  },
   container: {
     maxWidth: '900px',
     margin: '40px auto',
@@ -348,7 +421,8 @@ const styles = {
   },
   buttonContainer: {
     textAlign: 'center',
-    marginTop: '20px'
+    marginTop: '30px',
+    paddingTop: '30px'
   },
   primaryButton: {
     padding: '12px 30px',
