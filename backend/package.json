@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev" : "nodemon index"
+    "dev": "nodemon index"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +19,7 @@
     "nodemailer": "^6.10.0",
     "nodemon": "^3.1.9",
     "socket.io": "^4.8.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xtend": "^4.0.2"
   }
 }
