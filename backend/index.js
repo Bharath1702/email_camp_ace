@@ -18,7 +18,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin:'*',
+    origin: '*',
     methods: ['GET', 'POST']
   }
 });
@@ -52,7 +52,7 @@ const transporter = nodemailer.createTransport({
 
 /**
  * Helper to replace placeholders in the email body.
- * If the template has "Dear {{NAME}}" and rowData = { NAME: "Alice" }, it returns "Dear Alice".
+ * e.g., if template has "Dear {{NAME}}" and rowData = { NAME: "Alice" }, returns "Dear Alice".
  */
 function replacePlaceholders(template, rowData) {
   let output = template;
@@ -73,8 +73,9 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
       await transporter.sendMail(mailOptions);
       return;
     } catch (error) {
+      console.error(`Error sending mail to ${mailOptions.to}:`, error.message);
       if (error.responseCode === 421 && attempt < retries) {
-        console.warn(`Temporary error sending to ${mailOptions.to}. Retrying attempt ${attempt}...`);
+        console.warn(`Temporary error. Retrying attempt ${attempt}...`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
       } else {
         throw error;
@@ -91,11 +92,11 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
  *  - body: email body (HTML with placeholders)
  *
  * The Excel file must have a header row that includes "Email".
- * Optionally, if you want to attach PDFs, you can have a "document_file" column in the Excel,
- * and place matching files in ./certificates/<filename>.
+ * If you have a "document_file" column, PDFs in ./documents/<filename> will be attached.
  */
 app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   try {
+    console.log('Received /upload-campaign request...');
     const { subject, body } = req.body;
     const fileBuffer = req.file.buffer;
 
@@ -106,31 +107,35 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
     if (jsonData.length < 2) {
+      console.log('Excel file is empty or missing data.');
       return res.status(400).json({ message: 'Excel file is empty or missing data.' });
     }
 
-    // Find index of "Email" column
+    // Check for "Email" column
     const headerRow = jsonData[0];
     const emailIndex = headerRow.indexOf("Email");
     if (emailIndex === -1) {
+      console.log('No "Email" column found in the Excel file.');
       return res.status(400).json({
         message: 'No "Email" column found in the Excel file.'
       });
     }
 
-    // (Optional) find index of "DocumentFile" column if you want PDF attachments
+    // Check for optional "document_file" column
     const certIndex = headerRow.indexOf("document_file");
 
-    // Determine current batch by finding the highest batch used so far
+    // Determine batch number
     const lastRecord = await SentMail.findOne().sort({ batch: -1 });
     const currentBatch = lastRecord && lastRecord.batch ? lastRecord.batch + 1 : 1;
 
-    // Prepare an array of promises for concurrency
+    console.log(`Processing batch #${currentBatch}...`);
+
+    // Build array of promises
     const emailPromises = jsonData.slice(1).map(async (row, index) => {
       const email = row[emailIndex];
       if (!email || typeof email !== 'string') return null;
 
-      // Build rowData to map each header column to its value
+      // Build rowData
       const rowData = {};
       headerRow.forEach((colName, colIdx) => {
         rowData[colName] = (row[colIdx] || '').toString().trim();
@@ -138,9 +143,10 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
 
       const recipientEmail = rowData["Email"];
 
-      // Check for duplicates: same recipient and subject
+      // Check duplicates
       const duplicate = await SentMail.findOne({ recipient: recipientEmail, subject });
       if (duplicate) {
+        console.log(`Duplicate found for ${recipientEmail}, skipping.`);
         return {
           recipient: recipientEmail,
           status: 'duplicate',
@@ -152,12 +158,11 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       // Replace placeholders
       const personalizedBody = replacePlaceholders(body, rowData);
 
-      // Build attachments array if there's a document_file
+      // Build attachments if "document_file" present
       let attachments = [];
       if (certIndex !== -1) {
         const certName = row[certIndex];
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
-          // e.g. "AliceCertificate.pdf" is placed in ./documents
           const certPath = path.join(__dirname, 'documents', certName.trim());
           attachments.push({
             filename: certName.trim(),
@@ -166,7 +171,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
         }
       }
 
-      // Create mailOptions
+      // Mail options
       const mailOptions = {
         from: process.env.GMAIL_USER,
         to: recipientEmail,
@@ -175,10 +180,10 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
         attachments
       };
 
-      // Send with retry
+      // Send email
       await retrySend(mailOptions);
 
-      // Create record
+      // Create DB record
       const record = await SentMail.create({
         recipient: recipientEmail,
         subject,
@@ -187,20 +192,18 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
         seq: index + 1
       });
 
-      // Emit real-time update
+      // Emit real-time event
       io.emit('newEmail', record);
 
-      return {
-        recipient: recipientEmail,
-        status: 'sent',
-        batch: currentBatch,
-        seq: index + 1
-      };
+      console.log(`Sent to ${recipientEmail} successfully, batch #${currentBatch}, seq #${index + 1}`);
+      return { recipient: recipientEmail, status: 'sent', batch: currentBatch, seq: index + 1 };
     });
 
     const results = await Promise.all(emailPromises);
     const statuses = results.filter(r => r !== null);
 
+    // Return success
+    console.log(`Campaign processed successfully for batch #${currentBatch}! Returning 200 response...`);
     return res.status(200).json({
       statuses,
       message: `Campaign processed. ${statuses.filter(s => s.status === 'sent').length} emails sent in batch ${currentBatch}.`

@@ -20,7 +20,7 @@ function HomePage() {
   const [body, setBody] = useState(''); // rich text (HTML)
   const [isDragging, setIsDragging] = useState(false);
 
-  // Hardcoded passcode (adjust as needed)
+  // Hardcoded passcode
   const correctPasscode = '12345';
 
   // Handler for passcode submission
@@ -36,7 +36,7 @@ function HomePage() {
 
   // Safe focus handler for standard inputs
   const handleFocus = (e) => {
-    if (e && e.target && typeof e.target.scrollIntoView === 'function') {
+    if (e?.target?.scrollIntoView) {
       e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
@@ -61,12 +61,12 @@ function HomePage() {
       setColumns(headerRow || []);
       setPreviewRows(jsonData.slice(1, 6));
     } catch (err) {
-      console.error(err);
+      console.error('Error parsing Excel file:', err);
       toast.error('Error parsing Excel file.');
     }
   };
 
-  // Handler for file selection via input
+  // Handler for file selection
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     processFile(file);
@@ -96,7 +96,7 @@ function HomePage() {
     }
   }, []);
 
-  // Insert placeholder into the rich text body
+  // Insert placeholder
   const insertPlaceholder = (columnName) => {
     setBody(prev => prev + `{{${columnName}}}`);
   };
@@ -122,20 +122,21 @@ function HomePage() {
     formData.append('body', body);
 
     try {
+      console.log('Sending campaign request to:', `${BACKEND_URL}/upload-campaign`);
       const response = await axios.post(`${BACKEND_URL}/upload-campaign`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      // Primary success toast
+      console.log('Campaign POST response:', response);
+
+      // On success, show toast
       toast.success(response.data.message || 'Campaign sent successfully!');
-      // Additional success toast
-      toast.success('All emails have been processed! You can view the status under "View Sent Mails".');
     } catch (err) {
-      console.error(err);
+      console.error('Error in handleSendCampaign:', err);
       toast.error(err.response?.data?.message || 'Error sending campaign.');
     }
   };
 
-  // ReactQuill toolbar configuration
+  // ReactQuill config
   const modules = {
     toolbar: [
       [{ header: [1, 2, false] }],
@@ -146,7 +147,7 @@ function HomePage() {
     ]
   };
 
-  // If not authorized, show the passcode prompt.
+  // If not authorized, show passcode prompt
   if (!authorized) {
     return (
       <div style={styles.passcodeContainer}>
@@ -167,7 +168,7 @@ function HomePage() {
     );
   }
 
-  // Main content when authorized
+  // Authorized content
   return (
     <div style={styles.container}>
       <header style={styles.header}>
