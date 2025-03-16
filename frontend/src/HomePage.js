@@ -5,25 +5,24 @@ import { toast } from 'react-toastify';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = 'https://email-camp-ace-backend.vercel.app'; 
+// or use process.env.REACT_APP_BACKEND_URL if you prefer environment variables
 
 function HomePage() {
-  // Password protection state
   const [authorized, setAuthorized] = useState(false);
   const [passcode, setPasscode] = useState('');
 
-  // Main UI state
   const [excelFile, setExcelFile] = useState(null);
   const [columns, setColumns] = useState([]);
   const [previewRows, setPreviewRows] = useState([]);
   const [subject, setSubject] = useState('');
-  const [body, setBody] = useState(''); // rich text (HTML)
+  const [body, setBody] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
   // Hardcoded passcode
   const correctPasscode = '12345';
 
-  // Handler for passcode submission
+  // Submit passcode
   const handlePasscodeSubmit = (e) => {
     e.preventDefault();
     if (passcode === correctPasscode) {
@@ -34,14 +33,7 @@ function HomePage() {
     }
   };
 
-  // Safe focus handler for standard inputs
-  const handleFocus = (e) => {
-    if (e?.target?.scrollIntoView) {
-      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  };
-
-  // Process the file (from drop or input)
+  // Drag & Drop file
   const processFile = async (file) => {
     setExcelFile(file);
     setColumns([]);
@@ -66,13 +58,11 @@ function HomePage() {
     }
   };
 
-  // Handler for file selection
-  const handleFileChange = async (e) => {
+  const handleFileChange = (e) => {
     const file = e.target.files[0];
     processFile(file);
   };
 
-  // Drag & Drop Handlers
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -101,7 +91,7 @@ function HomePage() {
     setBody(prev => prev + `{{${columnName}}}`);
   };
 
-  // Send campaign request
+  // Send campaign
   const handleSendCampaign = async () => {
     if (!excelFile) {
       toast.error('Please select an Excel file.');
@@ -128,7 +118,6 @@ function HomePage() {
       });
       console.log('Campaign POST response:', response);
 
-      // On success, show toast
       toast.success(response.data.message || 'Campaign sent successfully!');
     } catch (err) {
       console.error('Error in handleSendCampaign:', err);
@@ -147,7 +136,6 @@ function HomePage() {
     ]
   };
 
-  // If not authorized, show passcode prompt
   if (!authorized) {
     return (
       <div style={styles.passcodeContainer}>
@@ -168,7 +156,6 @@ function HomePage() {
     );
   }
 
-  // Authorized content
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -176,7 +163,6 @@ function HomePage() {
         <a href="/sent-mails" style={styles.linkButton}>View Sent Mails</a>
       </header>
 
-      {/* Drag & Drop Excel Uploader */}
       <div
         style={{
           ...styles.uploaderContainer,
@@ -222,7 +208,6 @@ function HomePage() {
           type="text"
           value={subject}
           onChange={e => setSubject(e.target.value)}
-          onFocus={handleFocus}
           style={styles.input}
           placeholder="Enter email subject"
         />

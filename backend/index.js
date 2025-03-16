@@ -18,9 +18,9 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
+    // Allow requests from your frontend domain
     origin: 'https://email-camp-ace.vercel.app',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true
+    methods: ['GET', 'POST']
   }
 });
 
@@ -34,26 +34,26 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 2) Configure CORS
 app.use(cors({
-  origin: 'https://email-camp-ace.vercel.app',
+  origin: 'https://email-camp-ace.vercel.app', // Your frontend URL
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
 
-// 3) Multer setup: Only one Excel file is uploaded.
+// 3) Multer setup: Only one Excel file is uploaded
 const upload = multer({ storage: multer.memoryStorage() });
 
 // 4) Nodemailer transporter (using Gmail)
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.GMAIL_USER, // e.g. "your_gmail_username@gmail.com"
-    pass: process.env.GMAIL_PASS  // e.g. "your_app_password"
+    user: process.env.GMAIL_USER,  // e.g., "your_gmail_username@gmail.com"
+    pass: process.env.GMAIL_PASS   // e.g., "your_app_password"
   }
 });
 
 /**
  * Helper to replace placeholders in the email body.
- * e.g., if template has "Dear {{NAME}}" and rowData = { NAME: "Alice" }, returns "Dear Alice".
+ * e.g., if template has "Dear {{NAME}}" & rowData = { NAME: "Alice" }, returns "Dear Alice".
  */
 function replacePlaceholders(template, rowData) {
   let output = template;
@@ -66,7 +66,7 @@ function replacePlaceholders(template, rowData) {
 }
 
 /**
- * Retry helper for temporary SMTP errors (e.g. error code 421)
+ * Retry helper for temporary SMTP errors
  */
 async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -90,10 +90,10 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
  * Expects FormData with:
  *  - excelFile: The uploaded Excel file
  *  - subject: email subject
- *  - body: email body (HTML with placeholders)
+ *  - body: email body (with placeholders like {{Name}})
  *
- * The Excel file must have a header row that includes "Email".
- * If you have a "document_file" column, PDFs in ./documents/<filename> will be attached.
+ * The Excel file must have a header row with "Email".
+ * If "document_file" column is found, we'll attach the PDF from ./documents/<filename>
  */
 app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   try {
@@ -116,7 +116,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     const headerRow = jsonData[0];
     const emailIndex = headerRow.indexOf("Email");
     if (emailIndex === -1) {
-      console.log('No "Email" column found in the Excel file.');
+      console.log('No "Email" column found.');
       return res.status(400).json({
         message: 'No "Email" column found in the Excel file.'
       });
@@ -125,10 +125,9 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     // Check for optional "document_file" column
     const certIndex = headerRow.indexOf("document_file");
 
-    // Determine batch number
+    // Determine batch
     const lastRecord = await SentMail.findOne().sort({ batch: -1 });
     const currentBatch = lastRecord && lastRecord.batch ? lastRecord.batch + 1 : 1;
-
     console.log(`Processing batch #${currentBatch}...`);
 
     // Build array of promises
@@ -193,9 +192,8 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
         seq: index + 1
       });
 
-      // Emit real-time event
+      // Emit to socket.io
       io.emit('newEmail', record);
-
       console.log(`Sent to ${recipientEmail} successfully, batch #${currentBatch}, seq #${index + 1}`);
       return { recipient: recipientEmail, status: 'sent', batch: currentBatch, seq: index + 1 };
     });
@@ -203,8 +201,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     const results = await Promise.all(emailPromises);
     const statuses = results.filter(r => r !== null);
 
-    // Return success
-    console.log(`Campaign processed successfully for batch #${currentBatch}! Returning 200 response...`);
+    console.log(`Campaign processed for batch #${currentBatch}. Returning 200 response...`);
     return res.status(200).json({
       statuses,
       message: `Campaign processed. ${statuses.filter(s => s.status === 'sent').length} emails sent in batch ${currentBatch}.`
