@@ -115,6 +115,7 @@ function HomePage() {
       toast.error('Please enter the email body.');
       return;
     }
+
     const formData = new FormData();
     formData.append('excelFile', excelFile);
     formData.append('subject', subject);
@@ -155,7 +156,9 @@ function HomePage() {
             style={styles.passcodeInput}
             placeholder="Enter passcode"
           />
-          <button type="submit" style={styles.passcodeButton}>Submit</button>
+          <button type="submit" style={styles.passcodeButton}>
+            Submit
+          </button>
         </form>
       </div>
     );
@@ -170,7 +173,7 @@ function HomePage() {
       </header>
 
       {/* Drag & Drop Excel Uploader */}
-      <div 
+      <div
         style={{
           ...styles.uploaderContainer,
           border: isDragging ? '2px dashed #0056b3' : '2px dashed #007bff'
@@ -197,7 +200,11 @@ function HomePage() {
           <strong style={styles.columnTitle}>Columns Found:</strong>
           <div style={styles.columnContainer}>
             {columns.map((colName, i) => (
-              <button key={i} style={styles.columnButton} onClick={() => insertPlaceholder(colName)}>
+              <button
+                key={i}
+                style={styles.columnButton}
+                onClick={() => insertPlaceholder(colName)}
+              >
                 {colName}
               </button>
             ))}
@@ -229,7 +236,11 @@ function HomePage() {
       </div>
 
       <div style={styles.buttonContainer}>
-        <button type="button" style={styles.primaryButton} onClick={handleSendCampaign}>
+        <button
+          type="button"
+          style={styles.primaryButton}
+          onClick={handleSendCampaign}
+        >
           Send Campaign
         </button>
       </div>
