@@ -125,7 +125,10 @@ function HomePage() {
       const response = await axios.post(`${BACKEND_URL}/upload-campaign`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      // Primary success toast
       toast.success(response.data.message || 'Campaign sent successfully!');
+      // Additional success toast
+      toast.success('All emails have been processed! You can view the status under "View Sent Mails".');
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.message || 'Error sending campaign.');
