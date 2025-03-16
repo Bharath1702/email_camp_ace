@@ -33,7 +33,7 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 2) Configure CORS
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
