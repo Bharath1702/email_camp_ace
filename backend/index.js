@@ -91,7 +91,7 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
  *  - body: email body (HTML with placeholders)
  *
  * The Excel file must have a header row that includes "Email".
- * Optionally, if you want to attach PDFs, you can have a "CertificateFile" column in the Excel,
+ * Optionally, if you want to attach PDFs, you can have a "document_file" column in the Excel,
  * and place matching files in ./certificates/<filename>.
  */
 app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
@@ -118,8 +118,8 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       });
     }
 
-    // (Optional) find index of "CertificateFile" column if you want PDF attachments
-    const certIndex = headerRow.indexOf("CertificateFile");
+    // (Optional) find index of "DocumentFile" column if you want PDF attachments
+    const certIndex = headerRow.indexOf("document_file");
 
     // Determine current batch by finding the highest batch used so far
     const lastRecord = await SentMail.findOne().sort({ batch: -1 });
@@ -152,13 +152,13 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       // Replace placeholders
       const personalizedBody = replacePlaceholders(body, rowData);
 
-      // Build attachments array if there's a CertificateFile
+      // Build attachments array if there's a document_file
       let attachments = [];
       if (certIndex !== -1) {
         const certName = row[certIndex];
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
-          // e.g. "AliceCertificate.pdf" is placed in ./certificates
-          const certPath = path.join(__dirname, 'certificates', certName.trim());
+          // e.g. "AliceCertificate.pdf" is placed in ./documents
+          const certPath = path.join(__dirname, 'documents', certName.trim());
           attachments.push({
             filename: certName.trim(),
             path: certPath
