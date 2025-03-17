@@ -7,9 +7,11 @@ import { ToastContainer } from 'react-toastify';
 function App() {
   return (
     <Router>
-      <Routes>
+      {/* Keep ToastContainer here so it's not unmounted when routes change */}
       <ToastContainer />
-        <Route path="/" element={< HomePage/>} />
+      
+      <Routes>
+        <Route path="/" element={<HomePage />} />
         <Route path="/sent-mails" element={<SentMailsPage />} />
       </Routes>
     </Router>
