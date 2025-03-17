@@ -19,7 +19,7 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
     // Allow requests from your frontend domain
-    origin: 'https://email-camp-ace.vercel.app',
+    origin: '*',
     methods: ['GET', 'POST']
   }
 });
@@ -34,7 +34,7 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 2) Configure CORS
 app.use(cors({
-  origin: 'https://email-camp-ace.vercel.app', // Your frontend URL
+  origin: '*', // Your frontend URL
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
