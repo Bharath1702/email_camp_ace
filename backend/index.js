@@ -25,7 +25,6 @@ const io = socketIo(server, {
   }
 });
 
-
 // 1) Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -43,7 +42,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-
 // 3) Multer setup: Only one Excel file is uploaded
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -58,7 +56,7 @@ const transporter = nodemailer.createTransport({
 
 /**
  * Helper to replace placeholders in the email body.
- * If the template has "Dear {{NAME}}" & rowData = { NAME: "Alice" }, returns "Dear Alice".
+ * e.g., if template has "Dear {{NAME}}" & rowData = { NAME: "Alice" }, returns "Dear Alice".
  */
 function replacePlaceholders(template, rowData) {
   let output = template;
@@ -182,7 +180,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       if (certIndex !== -1) {
         const certName = row[certIndex];
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
-          const dropboxUrl = `https://www.dropbox.com/s/${certName.trim()}?dl=1`; // Ensure the link ends with ?dl=1
+          const dropboxUrl = `https://www.dropbox.com/scl/fi/se9jc3do5s380zipdcs4i/${certName.trim()}?dl=1`; // Ensure the link ends with ?dl=1
           const tempPath = path.join(__dirname, 'temp', certName.trim());
           await downloadFileFromDropbox(dropboxUrl, tempPath); // Download PDF from Dropbox
 
