@@ -18,7 +18,6 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    // Allow requests from your frontend domain
     origin: '*',
     methods: ['GET', 'POST']
   }
@@ -34,7 +33,7 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 2) Configure CORS
 app.use(cors({
-  origin: '*', // Your frontend URL
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
@@ -93,7 +92,7 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
  *  - body: email body (with placeholders like {{Name}})
  *
  * The Excel file must have a header row with "Email".
- * If "document_file" column is found, we'll attach the PDF from ./documents/<filename>
+ * If "document_file" column is found, we'll attach the PDF from Dropbox.
  */
 app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   try {
@@ -158,15 +157,16 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       // Replace placeholders
       const personalizedBody = replacePlaceholders(body, rowData);
 
-      // Build attachments if "document_file" present
+      // Build attachments if "document_file" present (Dropbox links)
       let attachments = [];
       if (certIndex !== -1) {
         const certName = row[certIndex];
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
-          const certPath = path.join(__dirname, 'documents', certName.trim());
+          // Replace with actual Dropbox link
+          const dropboxUrl = `https://www.dropbox.com/scl/fi/your_dropbox_folder/${certName.trim()}?dl=1`; // Adjust Dropbox folder path
           attachments.push({
             filename: certName.trim(),
-            path: certPath
+            path: dropboxUrl // Dropbox direct download link
           });
         }
       }
