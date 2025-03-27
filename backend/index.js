@@ -35,9 +35,9 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 2) Configure CORS
 const corsOptions = {
-  origin: 'https://email-camp-ace.vercel.app', // Replace this with your frontend domain
+  origin: '*', // Replace this with your frontend domain
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials:true,
+  
 };
 
 app.use(cors(corsOptions));
