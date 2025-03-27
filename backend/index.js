@@ -34,7 +34,7 @@ mongoose.connect(process.env.MONGO_URI, {
 const corsOptions = {
   origin: 'https://email-camp-ace.vercel.app', // Replace this with your frontend domain
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials:true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
 app.use(cors(corsOptions));
@@ -171,13 +171,10 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       if (certIndex !== -1) {
         const certName = row[certIndex];
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
-          // Dynamically generate the Dropbox URL for each recipient
+          // Use Dropbox link to fetch the PDF file
           const dropboxUrl = `https://www.dropbox.com/scl/fi/se9jc3do5s380zipdcs4i/${certName.trim()}?dl=1`;
+          const fileBuffer = await downloadFileFromDropbox(dropboxUrl); // Download PDF from Dropbox
 
-          // Download the PDF file from Dropbox
-          const fileBuffer = await downloadFileFromDropbox(dropboxUrl);
-
-          // Add the file as an attachment
           attachments.push({
             filename: certName.trim(),
             content: fileBuffer,
