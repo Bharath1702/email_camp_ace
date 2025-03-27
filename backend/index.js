@@ -20,7 +20,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: '*',
+    origin: 'https://email-camp-ace.vercel.app',
     methods: ['GET', 'POST']
   }
 });
@@ -35,7 +35,7 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 2) Configure CORS
 app.use(cors({
-  origin: '*',
+  origin: 'https://email-camp-ace.vercel.app',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
