@@ -20,10 +20,11 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: 'https://email-camp-ace.vercel.app',
-    methods: ['GET', 'POST']
+    origin: 'https://email-camp-ace.vercel.app', // Replace with your frontend domain
+    methods: ['GET', 'POST'],
   }
 });
+
 
 // 1) Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, {
@@ -34,11 +35,14 @@ mongoose.connect(process.env.MONGO_URI, {
 .catch((error) => console.error('MongoDB connection error:', error));
 
 // 2) Configure CORS
-app.use(cors({
-  origin: 'https://email-camp-ace.vercel.app',
+const corsOptions = {
+  origin: 'https://email-camp-ace.vercel.app', // Replace this with your frontend domain
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true
-}));
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+
 
 // 3) Multer setup: Only one Excel file is uploaded
 const upload = multer({ storage: multer.memoryStorage() });
