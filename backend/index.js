@@ -11,6 +11,8 @@ const http = require('http');
 const socketIo = require('socket.io');
 require('dotenv').config();
 const path = require('path');
+const axios = require('axios');
+const fs = require('fs');
 
 const SentMail = require('./models/SentMail');
 
@@ -45,14 +47,14 @@ const upload = multer({ storage: multer.memoryStorage() });
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.GMAIL_USER,  // e.g., "your_gmail_username@gmail.com"
-    pass: process.env.GMAIL_PASS   // e.g., "your_app_password"
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_PASS
   }
 });
 
 /**
  * Helper to replace placeholders in the email body.
- * e.g., if template has "Dear {{NAME}}" & rowData = { NAME: "Alice" }, returns "Dear Alice".
+ * If the template has "Dear {{NAME}}" & rowData = { NAME: "Alice" }, returns "Dear Alice".
  */
 function replacePlaceholders(template, rowData) {
   let output = template;
@@ -85,6 +87,20 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
 }
 
 /**
+ * Helper function to download a file from Dropbox
+ */
+const downloadFileFromDropbox = async (fileUrl, destinationPath) => {
+  const writer = fs.createWriteStream(destinationPath);
+  const response = await axios.get(fileUrl, { responseType: 'stream' });
+
+  response.data.pipe(writer);
+  return new Promise((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+  });
+};
+
+/**
  * POST /upload-campaign
  * Expects FormData with:
  *  - excelFile: The uploaded Excel file
@@ -92,7 +108,7 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
  *  - body: email body (with placeholders like {{Name}})
  *
  * The Excel file must have a header row with "Email".
- * If "document_file" column is found, we'll attach the PDF from Dropbox.
+ * If "document_file" column is found, we'll attach the PDF from Dropbox link.
  */
 app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   try {
@@ -157,16 +173,18 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       // Replace placeholders
       const personalizedBody = replacePlaceholders(body, rowData);
 
-      // Build attachments if "document_file" present (Dropbox links)
+      // Build attachments if "document_file" present
       let attachments = [];
       if (certIndex !== -1) {
         const certName = row[certIndex];
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
-          // Replace with actual Dropbox link
-          const dropboxUrl = `https://www.dropbox.com/scl/fi/your_dropbox_folder/${certName.trim()}?dl=1`; // Adjust Dropbox folder path
+          const dropboxUrl = `https://www.dropbox.com/s/${certName.trim()}?dl=1`; // Ensure the link ends with ?dl=1
+          const tempPath = path.join(__dirname, 'temp', certName.trim());
+          await downloadFileFromDropbox(dropboxUrl, tempPath); // Download PDF from Dropbox
+
           attachments.push({
             filename: certName.trim(),
-            path: dropboxUrl // Dropbox direct download link
+            path: tempPath
           });
         }
       }
