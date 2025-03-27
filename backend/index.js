@@ -17,8 +17,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: 'https://email-camp-ace.vercel.app',
-    methods: ['GET', 'POST'],
+    origin: '*',
     credentials: true,
   },
   transports: ['websocket'],  // Force WebSocket transport
@@ -35,9 +34,7 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 2) Configure CORS
 const corsOptions = {
-  origin: 'https://email-camp-ace.vercel.app', // This should be your frontend's URL
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  origin: '*', // This should be your frontend's URL
   credentials: true // If you're using cookies or authentication, set this to true
 };
 
