@@ -172,7 +172,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
         const certName = row[certIndex];
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
           // Use Dropbox link to fetch the PDF file
-          const dropboxUrl = `https://www.dropbox.com/scl/fi/se9jc3do5s380zipdcs4i/${certName.trim()}?rlkey=fgxs5abm8mplsqbz0uug0zncd&st=vnc45fuj&dl=1`; // Ensure the link ends with ?dl=1
+          const dropboxUrl = `https://www.dropbox.com/scl/fi/se9jc3do5s380zipdcs4i/${certName.trim()}?dl=1`;
           const fileBuffer = await downloadFileFromDropbox(dropboxUrl); // Download PDF from Dropbox
 
           attachments.push({
