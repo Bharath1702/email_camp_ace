@@ -1,6 +1,3 @@
-/***********************
-  SERVER (Node/Express with Socket.io)
-***********************/
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
@@ -35,9 +32,9 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 2) Configure CORS
 const corsOptions = {
-  origin: '*', // Replace this with your frontend domain
+  origin: 'https://email-camp-ace.vercel.app', // Replace this with your frontend domain
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  
+  allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
 app.use(cors(corsOptions));
@@ -56,7 +53,7 @@ const transporter = nodemailer.createTransport({
 
 /**
  * Helper to replace placeholders in the email body.
- * e.g., if template has "Dear {{NAME}}" & rowData = { NAME: "Alice" }, returns "Dear Alice".
+ * If the template has "Dear {{NAME}}" & rowData = { NAME: "Alice" }, returns "Dear Alice".
  */
 function replacePlaceholders(template, rowData) {
   let output = template;
@@ -142,6 +139,12 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     // Check for optional "document_file" column
     const certIndex = headerRow.indexOf("document_file");
 
+    // Ensure the temp directory exists for storing files temporarily
+    const tempDirectory = path.join(__dirname, 'temp');
+    if (!fs.existsSync(tempDirectory)) {
+      fs.mkdirSync(tempDirectory);
+    }
+
     // Determine batch
     const lastRecord = await SentMail.findOne().sort({ batch: -1 });
     const currentBatch = lastRecord && lastRecord.batch ? lastRecord.batch + 1 : 1;
@@ -180,8 +183,9 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
       if (certIndex !== -1) {
         const certName = row[certIndex];
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
-          const dropboxUrl = `https://www.dropbox.com/scl/fi/se9jc3do5s380zipdcs4i/${certName.trim()}?dl=1`; // Ensure the link ends with ?dl=1
-          const tempPath = path.join(__dirname, 'temp', certName.trim());
+          // Use Dropbox link to fetch the PDF file
+          const dropboxUrl = `https://www.dropbox.com/scl/fi/se9jc3do5s380zipdcs4i/${certName.trim()}?rlkey=fgxs5abm8mplsqbz0uug0zncd&st=vnc45fuj&dl=1`; // Ensure the link ends with ?dl=1
+          const tempPath = path.join(__dirname, 'temp', certName.trim()); // Save to temp folder
           await downloadFileFromDropbox(dropboxUrl, tempPath); // Download PDF from Dropbox
 
           attachments.push({
@@ -235,10 +239,7 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
   }
 });
 
-/**
- * GET /sent-mails
- * Returns all sent email records sorted by batch and seq in ascending order.
- */
+// 5) GET /sent-mails - Returns all sent email records sorted by batch and seq in ascending order.
 app.get('/sent-mails', async (req, res) => {
   try {
     const mails = await SentMail.find().sort({ batch: 1, seq: 1 });
