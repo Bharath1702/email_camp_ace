@@ -17,10 +17,13 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: 'https://email-camp-ace.vercel.app', // Replace with your frontend domain
+    origin: 'https://email-camp-ace.vercel.app',
     methods: ['GET', 'POST'],
-  }
+    credentials: true,
+  },
+  transports: ['websocket'],  // Force WebSocket transport
 });
+
 
 // 1) Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, {
