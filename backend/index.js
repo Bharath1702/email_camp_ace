@@ -88,15 +88,9 @@ async function retrySend(mailOptions, retries = 3, delayMs = 2000) {
 /**
  * Helper function to download a file from Dropbox
  */
-const downloadFileFromDropbox = async (fileUrl, destinationPath) => {
-  const writer = fs.createWriteStream(destinationPath);
-  const response = await axios.get(fileUrl, { responseType: 'stream' });
-
-  response.data.pipe(writer);
-  return new Promise((resolve, reject) => {
-    writer.on('finish', resolve);
-    writer.on('error', reject);
-  });
+const downloadFileFromDropbox = async (fileUrl) => {
+  const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+  return Buffer.from(response.data); // Returns the file as a buffer
 };
 
 /**
@@ -139,12 +133,6 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
     // Check for optional "document_file" column
     const certIndex = headerRow.indexOf("document_file");
 
-    // Ensure the temp directory exists for storing files temporarily
-    const tempDirectory = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempDirectory)) {
-      fs.mkdirSync(tempDirectory);
-    }
-
     // Determine batch
     const lastRecord = await SentMail.findOne().sort({ batch: -1 });
     const currentBatch = lastRecord && lastRecord.batch ? lastRecord.batch + 1 : 1;
@@ -185,12 +173,12 @@ app.post('/upload-campaign', upload.single('excelFile'), async (req, res) => {
         if (certName && typeof certName === 'string' && certName.trim() !== '') {
           // Use Dropbox link to fetch the PDF file
           const dropboxUrl = `https://www.dropbox.com/scl/fi/se9jc3do5s380zipdcs4i/${certName.trim()}?rlkey=fgxs5abm8mplsqbz0uug0zncd&st=vnc45fuj&dl=1`; // Ensure the link ends with ?dl=1
-          const tempPath = path.join(__dirname, 'temp', certName.trim()); // Save to temp folder
-          await downloadFileFromDropbox(dropboxUrl, tempPath); // Download PDF from Dropbox
+          const fileBuffer = await downloadFileFromDropbox(dropboxUrl); // Download PDF from Dropbox
 
           attachments.push({
             filename: certName.trim(),
-            path: tempPath
+            content: fileBuffer,
+            encoding: 'base64' // Send file as base64 encoding
           });
         }
       }
